@@ -1,0 +1,87 @@
+#!/usr/bin/env sh
+# vi: ft=sh
+#
+
+_USAGE()
+{
+    cat >&2 <<_TEXT_
+Usage:
+    oocp source-vm /source/path/ [/to-local/path/]
+        Copy files recursively from other VM into this VM.
+        The operation is performed by dom0 using scp.
+        First argument is the source VM to copy from.
+        Second argument is the path inside the srouce VM to copy, file or directory, relative to HOME dir unless prefixed with '/'.
+        Note that if last argument is left out or set to "." then copy destination is current PWD.
+
+Examples:
+    oocp work .vimrc     (copy from source HOME to destination VM's PWD)
+    oocp work .vimrc .   (copy from source HOME to destination VM's PWD)
+    oocp work .vimrc /tmp  (copy to absolute path)
+    oocp work /opt/somedir somedir   (copy from absolute path to PWD/somedir)
+
+_TEXT_
+}
+
+_ERROR()
+{
+    printf "%s\\n" "${1}" >&2
+}
+
+if [ "$#" -eq 0 ]; then
+    _USAGE
+    exit 1
+fi
+
+if  [ "${1}" = "-h" ]; then
+    _USAGE
+    exit 0
+fi
+
+sourceVM=
+sourcePath=
+destPath="${PWD}"
+
+if [ "$#" -lt 2 ]; then
+    _ERROR "Error: at least two arguments must be given"
+    exit 1
+fi
+
+sourceVM="${1}"
+shift
+
+sourcePath="${1}"
+shift
+
+if [ "$#" -gt 0 ]; then
+    if [ "${1}" != "." ]; then
+        if [ "${1#/*}" = "${1}" ]; then
+            destPath="${PWD}/${1}"
+        else
+            destPath="${1}"
+        fi
+    fi
+fi
+
+if [ -z "${sourceVM}" ] || [ -z "${sourcePath}" ] || [ -z "${destPath}" ]; then
+    _USAGE
+    exit 1
+fi
+
+# There is some trickstery here to detect EOF
+#
+{ printf "cp\\n%s\\n%s\\n%s\\n" "${sourceVM}" "${sourcePath}" "${destPath}"; while command >&1; do printf "\\n"; sleep 1; done; } |
+socat "UNIX-CONNECT:${HOME}/homerunos.sock" - | {
+    line=
+    count=0
+    while IFS= read -r line; do
+        count=$((count + 1))
+        if [ "${line#error:}" != "${line}" ]; then
+            exit "${line#error: }"
+        fi
+        printf "%s\\n" "${line}"
+    done
+    if [ "${count}" -eq 0 ]; then
+        printf "%s\\n" "Socket seems unconnected" >&2
+        exit 1
+    fi
+}
