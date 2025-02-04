@@ -70,7 +70,16 @@ fi
 # There is some trickstery here to detect EOF
 #
 { printf "cp\\n%s\\n%s\\n%s\\n" "${sourceVM}" "${sourcePath}" "${destPath}"; while command >&1; do printf "\\n"; sleep 1; done; } |
-socat "UNIX-CONNECT:${HOME}/homerunos.sock" - | {
+socat "UNIX-CONNECT:${HOME}/.homerunos.sock" - | {
+    size=
+    IFS= read -r size
+
+    if [ "${size#error:}" != "${size}" ]; then
+        exit "${size#error: }"
+    fi
+
+    printf "Copying %s bytes...\\n" "${size}" >&2
+
     line=
     count=0
     while IFS= read -r line; do
